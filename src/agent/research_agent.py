@@ -107,9 +107,68 @@ class ResearchAgent:
             }
     
     def _summarize_tool(self, text: str, **kwargs) -> Dict[str, Any]:
-        """总结工具实现"""
-        # TODO: 实现实际的总结逻辑
-        return {"status": "success", "summary": ""}
+        """总结工具实现 - 使用语言模型生成文本摘要"""
+        try:
+            # 获取摘要参数
+            max_length = kwargs.get('max_length', 150)
+            min_length = kwargs.get('min_length', 50)
+            
+            # 如果文本太短，直接返回
+            if len(text.split()) < 10:
+                return {
+                    "status": "success",
+                    "summary": text,
+                    "original_length": len(text),
+                    "summary_length": len(text)
+                }
+            
+            # 构建摘要提示词
+            prompt = f"""请为以下文本生成一个简洁的摘要，摘要长度在{min_length}-{max_length}字之间：
+
+文本内容：
+{text}
+
+摘要："""
+            
+            # 使用模型生成摘要
+            inputs = self.tokenizer(prompt, return_tensors="pt").to(self.device)
+            outputs = self.model.generate(
+                **inputs,
+                max_new_tokens=max_length,
+                min_new_tokens=min_length,
+                temperature=0.3,  # 降低温度以获得更稳定的摘要
+                do_sample=True,
+                pad_token_id=self.tokenizer.eos_token_id
+            )
+            
+            # 解码摘要
+            summary = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
+            
+            # 提取生成的摘要部分（去除原始提示词）
+            summary = summary.replace(prompt, "").strip()
+            
+            # 如果摘要为空或太短，使用简单的文本截取
+            if len(summary) < min_length:
+                words = text.split()
+                summary = " ".join(words[:max_length//5]) + "..."
+            
+            return {
+                "status": "success",
+                "summary": summary,
+                "original_length": len(text),
+                "summary_length": len(summary),
+                "compression_ratio": round(len(summary) / len(text), 2)
+            }
+            
+        except Exception as e:
+            logger.error(f"总结工具执行失败: {e}")
+            return {
+                "status": "error",
+                "error": str(e),
+                "summary": "",
+                "original_length": len(text),
+                "summary_length": 0
+            }
     
     def _compare_tool(self, texts: List[str], **kwargs) -> Dict[str, Any]:
         """比较工具实现"""
